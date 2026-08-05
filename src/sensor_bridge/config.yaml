@@ -1,0 +1,168 @@
+# Sensor Bridge Configuration
+# Device definitions, sensor mappings, and threshold values.
+# LaForge modifies this file — the ensign reads it.
+
+broker:
+  host: localhost
+  port: 1883
+  client_id: sensor-bridge
+  keepalive: 60
+  username: ""
+  password: ""
+
+# MQTT topic structure: vessel/{device_id}/{channel}/{detail}
+topic_root: vessel
+
+# Time-series storage
+history:
+  db_path: data/sensor_history.db
+  # Auto-rotate entries older than this (days). 0 = keep forever.
+  retention_days: 90
+  # Compaction: merge 1-second readings into 1-minute averages after this age.
+  compaction_after_hours: 24
+  # Maximum readings per sensor to keep in high-resolution table.
+  max_high_res: 100000
+
+# Escalation routing — who gets notified at each level.
+escalation:
+  level_0_normal:
+    notify: []
+    log: true
+    page_laforge: false
+  level_1_warning:
+    notify: []
+    log: true
+    page_laforge: false
+    laforge_review_on_next: true
+  level_2_alert:
+    notify: ["captain"]
+    log: true
+    page_laforge: true
+    laforge_priority: normal
+  level_3_critical:
+    notify: ["captain", "crew"]
+    log: true
+    page_laforge: true
+    laforge_priority: urgent
+
+# Device definitions.
+# Each device has sensors with type, unit, and thresholds.
+devices:
+  engine_ensign_1:
+    # Matches the engine-ensign ESP32 firmware.
+    description: "Generic Diesel Engine Monitor"
+    firmware: "engine-ensign"
+    location: "engine_room"
+    sensors:
+      rpm:
+        type: float
+        unit: rpm
+        min: 0
+        max: 4000
+        thresholds:
+          warning: 3400    # RPM_REDLINE
+          critical: 3600
+        anomaly:
+          # Max rate of change per second (for spike detection)
+          max_rate_of_change: 500
+          # If value stays within this band for N readings, it's "stuck"
+          stuck_band: 5
+          stuck_readings: 10
+
+      coolant_temp:
+        type: float
+        unit: "°C"
+        min: 0
+        max: 150
+        thresholds:
+          warning: 90      # TEMP_NORMAL_MAX
+          critical: 100    # TEMP_REDLINE
+        anomaly:
+          max_rate_of_change: 10
+          stuck_band: 0.5
+          stuck_readings: 30
+          # Drift: if rolling average moves more than this per minute
+          drift_rate: 2.0
+
+      oil_pressure:
+        type: float
+        unit: bar
+        min: 0
+        max: 10
+        thresholds:
+          # Below thresholds — only trigger when engine is running (rpm > 500)
+          warning: 1.5     # OIL_PRESSURE_MIN
+          critical: 0.8    # OIL_PRESSURE_CRIT
+          below: true      # These are low-thresholds, not high
+          condition: "rpm > 500"
+        anomaly:
+          max_rate_of_change: 2.0
+          stuck_band: 0.1
+          stuck_readings: 30
+
+      battery_voltage:
+        type: float
+        unit: V
+        min: 0
+        max: 18
+        thresholds:
+          warning_low: 11.8
+          critical_low: 10.5
+          warning_high: 15.0
+          critical_high: 16.0
+        anomaly:
+          max_rate_of_change: 1.0
+          stuck_band: 0.05
+          stuck_readings: 60
+
+      fuel_rate:
+        type: float
+        unit: L/h
+        min: 0
+        max: 50
+        thresholds: {}
+        anomaly:
+          max_rate_of_change: 5.0
+          stuck_band: 0.5
+          stuck_readings: 20
+
+  # Template for additional devices — copy and customize.
+  # weather_station_1:
+  #   description: "Onboard Weather Station"
+  #   firmware: "custom"
+  #   location: "flybridge"
+  #   sensors:
+  #     barometric_pressure:
+  #       type: float
+  #       unit: hPa
+  #       min: 950
+  #       max: 1080
+  #       thresholds:
+  #         # Rapid drop = weather change
+  #         warning_drop_3h: 3.0    # hPa drop in 3 hours
+  #         critical_drop_3h: 6.0
+  #       anomaly:
+  #         max_rate_of_change: 1.0
+  #         stuck_band: 0.1
+  #         stuck_readings: 120
+  #         drift_rate: 0.5
+
+# Pattern detector settings
+pattern_detector:
+  # Window size for rolling statistics (number of readings)
+  rolling_window: 60
+  # Spike: value exceeds N standard deviations from rolling mean
+  spike_stddev: 4.0
+  # Drift: rolling average moves more than this per minute
+  drift_threshold: 2.0
+  # Stuck: value hasn't moved outside this band in N readings
+  stuck_check_enabled: true
+
+# Exocortex integration
+exocortex:
+  # Path to the exocortex memory layer (bottle ledger or memory dir)
+  memory_path: ../EXOCORTEX/memory/
+  # Whether to write observation bottles for sensor readings
+  write_bottles: true
+  # Bottle write interval (seconds) — don't write every reading, batch them
+  bottle_interval: 60
