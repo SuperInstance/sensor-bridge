@@ -52,6 +52,9 @@ def load_config(config_path: str | Path) -> BridgeConfig:
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
+    if raw is None:
+        raw = {}
+
     broker = raw.get("broker", {})
     history_raw = raw.get("history", {})
     pd_raw = raw.get("pattern_detector", {})
